@@ -1,8 +1,9 @@
 package dns
 
 import (
-	"github.com/miekg/dns"
 	"net"
+
+	"github.com/miekg/dns"
 )
 
 var domainsToAddresses map[string]string = map[string]string{
@@ -10,16 +11,24 @@ var domainsToAddresses map[string]string = map[string]string{
 	"jameshfisher.com.": "104.198.14.52",
 }
 
-type Handler struct{}
+type Handler struct {
+	internalResolver map[string]string
+}
 
-func (this *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
+func NewDNSHandler(internalResolver map[string]string) Handler {
+	return Handler{
+		internalResolver: internalResolver,
+	}
+}
+
+func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	msg := dns.Msg{}
 	msg.SetReply(r)
 	switch r.Question[0].Qtype {
 	case dns.TypeA:
 		msg.Authoritative = true
 		domain := msg.Question[0].Name
-		address, ok := domainsToAddresses[domain]
+		address, ok := h.internalResolver[domain]
 		if ok {
 			msg.Answer = append(msg.Answer, &dns.A{
 				Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},

@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"log"
 	"myternet/domain"
+	"myternet/infrastructure/persistance/views"
 	"myternet/infrastructure/services/db"
 	mdns "myternet/infrastructure/services/dns"
+	"myternet/web/api"
 	"net/http"
 	"strconv"
 
@@ -21,6 +23,7 @@ func runWeb(db *gorm.DB) {
 			"message": "pong",
 		})
 	})
+	r.POST("/dns/blocklist/add", api.AddBlockedDNSDomain(db))
 	r.Run()
 }
 
@@ -32,7 +35,8 @@ func main() {
 	go runWeb(db)
 	fmt.Println(db)
 	srv := &dns.Server{Addr: ":" + strconv.Itoa(8053), Net: "udp"}
-	srv.Handler = &mdns.Handler{}
+	dnsHandler := mdns.NewDNSHandler(views.BlockedDNSDomainToInternalResolver(db))
+	srv.Handler = &dnsHandler
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Failed to set udp listener %s\n", err.Error())
 	}
