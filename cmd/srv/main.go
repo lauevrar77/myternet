@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"myternet/domain"
-	"myternet/infrastructure/persistance/views"
 	"myternet/infrastructure/services/db"
 	mdns "myternet/infrastructure/services/dns"
 	"myternet/web/api"
@@ -35,7 +34,7 @@ func main() {
 	go runWeb(db)
 	fmt.Println(db)
 	srv := &dns.Server{Addr: ":" + strconv.Itoa(8053), Net: "udp"}
-	dnsHandler := mdns.NewDNSHandler(views.BlockedDNSDomainToInternalResolver(db))
+	dnsHandler := mdns.NewDNSHandler(db)
 	srv.Handler = &dnsHandler
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Failed to set udp listener %s\n", err.Error())

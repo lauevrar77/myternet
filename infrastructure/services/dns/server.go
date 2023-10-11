@@ -1,50 +1,50 @@
 package dns
 
 import (
-	"net"
-
+	"fmt"
 	"github.com/miekg/dns"
+	"gorm.io/gorm"
+	"myternet/domain"
 )
 
-var domainsToAddresses map[string]string = map[string]string{
-	"google.com.":       "1.2.3.4",
-	"jameshfisher.com.": "104.198.14.52",
-}
-
 type Handler struct {
-	internalResolver map[string]string
+	resolver    *DNSResolver
+	queryStream chan DNSQuery
 }
 
-func NewDNSHandler(internalResolver map[string]string) Handler {
+func NewDNSHandler(db *gorm.DB) Handler {
+	queryStream := make(chan DNSQuery, 100)
+	changeStream := make(chan []domain.BlockedDNSDomain, 0)
+	updater := &dnsUpdater{
+		db:             db,
+		changeStream:   changeStream,
+		blockedDomains: make([]domain.BlockedDNSDomain, 0),
+	}
+	go updater.Update()
+	resolver := &DNSResolver{
+		db:                db,
+		changeStream:      changeStream,
+		queryStream:       queryStream,
+		aRecordsBlockList: make(map[string]string),
+		updater:           updater,
+	}
+	go resolver.Run()
 	return Handler{
-		internalResolver: internalResolver,
+		resolver:    resolver,
+		queryStream: queryStream,
 	}
 }
 
 func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
-	msg := dns.Msg{}
-	msg.SetReply(r)
-	switch r.Question[0].Qtype {
-	case dns.TypeA:
-		msg.Authoritative = true
-		domain := msg.Question[0].Name
-		address, ok := h.internalResolver[domain]
-		if ok {
-			msg.Answer = append(msg.Answer, &dns.A{
-				Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
-				A:   net.ParseIP(address),
-			})
-		} else {
-			answer, _ := Resolve(r)
-			for _, a := range answer {
-				msg.Answer = append(msg.Answer, a)
-			}
-		}
-	default:
-		answer, _ := Resolve(r)
-		for _, a := range answer {
-			msg.Answer = append(msg.Answer, a)
-		}
+	go fmt.Printf("Received DNS query: %v\n", r)
+	resultChan := make(chan DNSResponse, 0)
+	h.queryStream <- DNSQuery{
+		Query:      r,
+		ResultChan: resultChan,
 	}
-	w.WriteMsg(&msg)
+	result := <-resultChan
+	if result.Error != nil {
+		fmt.Println(result.Error)
+	}
+	w.WriteMsg(&result.Response)
 }
